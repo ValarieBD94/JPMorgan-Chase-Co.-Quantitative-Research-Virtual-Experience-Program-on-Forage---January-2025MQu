@@ -1,0 +1,113 @@
+import pandas as pd
+import numpy as np
+from math import log
+import os
+
+# Step 1: Load the dataset
+def load_data(file_path):
+    """
+    Load the dataset and return the DataFrame.
+    """
+    try:
+        df = pd.read_csv(file_path)
+        return df
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return None
+
+# Step 2: Prepare cumulative default and total counts
+def prepare_cumulative_data(df):
+    """
+    Prepare cumulative default and total counts for FICO scores.
+    """
+    x = df['default'].to_list()
+    y = df['fico_score'].to_list()
+    n = len(x)
+
+    # Initialize arrays for defaults and totals
+    default = [0 for _ in range(851)]
+    total = [0 for _ in range(851)]
+
+    # Populate default and total counts
+    for i in range(n):
+        fico_index = int(y[i]) - 300  # Map FICO scores to indices (300–850 -> 0–550)
+        default[fico_index] += x[i]
+        total[fico_index] += 1
+
+    # Calculate cumulative sums
+    for i in range(1, 551):
+        default[i] += default[i - 1]
+        total[i] += total[i - 1]
+
+    return default, total
+
+# Step 3: Log-likelihood function
+def log_likelihood(n, k):
+    """
+    Calculate the log-likelihood for a binomial distribution.
+    """
+    if n == 0 or k == 0 or k == n:
+        return 0
+    p = k / n
+    return k * log(p) + (n - k) * log(1 - p)
+
+# Step 4: Dynamic programming to find optimal bins
+def find_optimal_bins(default, total, num_bins=10):
+    """
+    Use dynamic programming to find the optimal bin boundaries for FICO scores.
+    """
+    dp = [[[-float('inf'), 0] for _ in range(551)] for _ in range(num_bins + 1)]
+
+    # Initialize DP table
+    for i in range(num_bins + 1):
+        for j in range(551):
+            if i == 0:
+                dp[i][j][0] = 0  # Base case: no bins
+            else:
+                for k in range(j):
+                    if total[j] == total[k]:
+                        continue
+                    current_likelihood = log_likelihood(total[j] - total[k], default[j] - default[k])
+                    if i == 1:
+                        dp[i][j][0] = current_likelihood
+                    else:
+                        if dp[i][j][0] < dp[i - 1][k][0] + current_likelihood:
+                            dp[i][j][0] = dp[i - 1][k][0] + current_likelihood
+                            dp[i][j][1] = k
+
+    # Extract bin boundaries using backtracking
+    boundaries = []
+    k = 550
+    r = num_bins
+    while r > 0:
+        boundaries.append(k + 300)  # Map index back to FICO score
+        k = dp[r][k][1]
+        r -= 1
+
+    boundaries.reverse()
+    return round(dp[num_bins][550][0], 4), boundaries
+
+# Step 5: Main function
+def main():
+    """
+    Main function to execute the binning process.
+    """
+    # Load data
+    file_path = 'loan_data_created.csv'
+    df = load_data(file_path)
+    if df is None:
+        return
+
+    # Prepare cumulative data
+    default, total = prepare_cumulative_data(df)
+
+    # Find optimal bins
+    max_likelihood, bin_boundaries = find_optimal_bins(default, total, num_bins=10)
+
+    # Print results
+    print(f"Maximum Log-Likelihood: {max_likelihood}")
+    print(f"Optimal Bin Boundaries: {bin_boundaries}")
+
+# Run the main function
+if __name__ == "__main__":
+    main()
