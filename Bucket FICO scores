@@ -10,9 +10,17 @@ def load_data(file_path):
     """
     try:
         df = pd.read_csv(file_path)
+        # Basic validation for required columns
+        required_columns = ['default', 'fico_score']
+        for col in required_columns:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
         return df
     except FileNotFoundError:
         print(f"Error: File not found at {file_path}")
+        return None
+    except ValueError as ve:
+        print(f"Error: {ve}")
         return None
 
 # Step 2: Prepare cumulative default and total counts
@@ -24,22 +32,27 @@ def prepare_cumulative_data(df):
     y = df['fico_score'].to_list()
     n = len(x)
 
+    # Dynamically determine FICO score range
+    min_fico = int(min(y))
+    max_fico = int(max(y))
+    range_fico = max_fico - min_fico + 1
+
     # Initialize arrays for defaults and totals
-    default = [0 for _ in range(851)]
-    total = [0 for _ in range(851)]
+    default = [0 for _ in range(range_fico)]
+    total = [0 for _ in range(range_fico)]
 
     # Populate default and total counts
     for i in range(n):
-        fico_index = int(y[i]) - 300  # Map FICO scores to indices (300–850 -> 0–550)
+        fico_index = int(y[i]) - min_fico  # Map FICO scores to indices
         default[fico_index] += x[i]
         total[fico_index] += 1
 
     # Calculate cumulative sums
-    for i in range(1, 551):
+    for i in range(1, range_fico):
         default[i] += default[i - 1]
         total[i] += total[i - 1]
 
-    return default, total
+    return default, total, min_fico, max_fico
 
 # Step 3: Log-likelihood function
 def log_likelihood(n, k):
@@ -52,15 +65,16 @@ def log_likelihood(n, k):
     return k * log(p) + (n - k) * log(1 - p)
 
 # Step 4: Dynamic programming to find optimal bins
-def find_optimal_bins(default, total, num_bins=10):
+def find_optimal_bins(default, total, min_fico, max_fico, num_bins=10):
     """
     Use dynamic programming to find the optimal bin boundaries for FICO scores.
     """
-    dp = [[[-float('inf'), 0] for _ in range(551)] for _ in range(num_bins + 1)]
+    range_fico = max_fico - min_fico + 1
+    dp = [[[-float('inf'), 0] for _ in range(range_fico)] for _ in range(num_bins + 1)]
 
     # Initialize DP table
     for i in range(num_bins + 1):
-        for j in range(551):
+        for j in range(range_fico):
             if i == 0:
                 dp[i][j][0] = 0  # Base case: no bins
             else:
@@ -77,15 +91,15 @@ def find_optimal_bins(default, total, num_bins=10):
 
     # Extract bin boundaries using backtracking
     boundaries = []
-    k = 550
+    k = range_fico - 1
     r = num_bins
     while r > 0:
-        boundaries.append(k + 300)  # Map index back to FICO score
+        boundaries.append(k + min_fico)  # Map index back to FICO score
         k = dp[r][k][1]
         r -= 1
 
     boundaries.reverse()
-    return round(dp[num_bins][550][0], 4), boundaries
+    return round(dp[num_bins][range_fico - 1][0], 4), boundaries
 
 # Step 5: Main function
 def main():
@@ -99,10 +113,10 @@ def main():
         return
 
     # Prepare cumulative data
-    default, total = prepare_cumulative_data(df)
+    default, total, min_fico, max_fico = prepare_cumulative_data(df)
 
     # Find optimal bins
-    max_likelihood, bin_boundaries = find_optimal_bins(default, total, num_bins=10)
+    max_likelihood, bin_boundaries = find_optimal_bins(default, total, min_fico, max_fico, num_bins=10)
 
     # Print results
     print(f"Maximum Log-Likelihood: {max_likelihood}")
