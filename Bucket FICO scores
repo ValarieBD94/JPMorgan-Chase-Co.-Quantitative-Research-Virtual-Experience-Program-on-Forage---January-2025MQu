@@ -1,21 +1,31 @@
 import pandas as pd
 import numpy as np
 from math import log
-import os
 
 # Step 1: Load the dataset
 def load_data(file_path):
     """
     Load the dataset and return the DataFrame.
+    Validates the existence of required columns.
     """
     try:
+        # Load the dataset
         df = pd.read_csv(file_path)
-        # Basic validation for required columns
+
+        # Validate required columns
         required_columns = ['default', 'fico_score']
         for col in required_columns:
             if col not in df.columns:
                 raise ValueError(f"Missing required column: {col}")
+
+        # Ensure data types are correct
+        if not pd.api.types.is_numeric_dtype(df['fico_score']):
+            raise ValueError("'fico_score' column must contain numeric values.")
+        if not pd.api.types.is_integer_dtype(df['default']):
+            raise ValueError("'default' column must contain integer (binary) values.")
+
         return df
+
     except FileNotFoundError:
         print(f"Error: File not found at {file_path}")
         return None
@@ -27,6 +37,7 @@ def load_data(file_path):
 def prepare_cumulative_data(df):
     """
     Prepare cumulative default and total counts for FICO scores.
+    Dynamically determines the FICO score range.
     """
     x = df['default'].to_list()
     y = df['fico_score'].to_list()
