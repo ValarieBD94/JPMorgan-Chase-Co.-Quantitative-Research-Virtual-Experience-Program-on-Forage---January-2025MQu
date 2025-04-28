@@ -1,26 +1,41 @@
 from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
-import numpy as np
+from sklearn.preprocessing import StandardScaler
 import pandas as pd
 
-
+# Load dataset
 df = pd.read_csv('loan_data_created.csv')
 
-
-features = ['credit_lines_outstanding', 'debt_to_income', 'payment_to_income', 'years_employed', 'fico_score']
-
-
+# Feature engineering
 df['payment_to_income'] = df['loan_amt_outstanding'] / df['income']
-    
-
 df['debt_to_income'] = df['total_debt_outstanding'] / df['income']
 
-clf = LogisticRegression(random_state=0, solver='liblinear', tol=1e-5, max_iter=10000).fit(df[features], df['default'])
-print(clf.coef_, clf.intercept_)
+# Validate and preprocess data
+features = ['credit_lines_outstanding', 'debt_to_income', 'payment_to_income', 'years_employed', 'fico_score']
+if df.isnull().sum().sum() > 0:
+    print("Warning: Missing values detected. Fill or drop missing values.")
+df[features] = df[features].fillna(0)  # Example: Fill missing values with 0
 
+# Standardize features
+scaler = StandardScaler()
+df[features] = scaler.fit_transform(df[features])
 
+# Train logistic regression model
+clf = LogisticRegression(random_state=0, solver='liblinear', tol=1e-5, max_iter=10000)
+clf.fit(df[features], df['default'])
+
+# Print coefficients
+print("Coefficients:", clf.coef_)
+print("Intercept:", clf.intercept_)
+
+# Predictions and evaluation
 y_pred = clf.predict(df[features])
+y_prob = clf.predict_proba(df[features])[:, 1]
 
-fpr, tpr, thresholds = metrics.roc_curve(df['default'], y_pred)
-print((1.0*(abs(df['default']-y_pred)).sum()) / len(df))
-print(metrics.auc(fpr, tpr))
+# ROC Curve and AUC
+fpr, tpr, thresholds = metrics.roc_curve(df['default'], y_prob)
+print("AUC:", metrics.auc(fpr, tpr))
+
+# Accuracy
+from sklearn.metrics import accuracy_score
+print("Accuracy:", accuracy_score(df['default'], y_pred))
