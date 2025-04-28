@@ -1,10 +1,20 @@
 from datetime import date
 from typing import List
+from dateutil.relativedelta import relativedelta
 import math
 
+def validate_inputs(dates: List[date], prices: List[float]):
+    if len(dates) != len(prices):
+        raise ValueError("Dates and prices must have the same length.")
+    if not all(isinstance(d, date) for d in dates):
+        raise TypeError("All elements in dates must be of type 'date'.")
+    if not all(p >= 0 for p in prices):
+        raise ValueError("Prices must be non-negative.")
+
 def calculate_storage_cost(start_date: date, end_date: date, storage_cost_rate: float) -> float:
-    """Calculate the total storage cost based on the duration in months."""
-    months = math.ceil((end_date - start_date).days / 30)
+    """Calculate the total storage cost based on the exact duration in months."""
+    duration = relativedelta(end_date, start_date)
+    months = duration.years * 12 + duration.months + (1 if duration.days > 0 else 0)
     return months * storage_cost_rate
 
 def inject_gas(volume: float, rate: float, max_volume: float, price: float, injection_cost_rate: float) -> (float, float):
@@ -27,59 +37,35 @@ def withdraw_gas(volume: float, rate: float, price: float, withdrawal_cost_rate:
         print("Withdrawal not possible: insufficient gas volume.")
         return volume, 0
 
-def price_contract(
-    in_dates: List[date], in_prices: List[float],
-    out_dates: List[date], out_prices: List[float],
-    rate: float, storage_cost_rate: float,
-    max_volume: float, injection_withdrawal_cost_rate: float
-) -> float:
+def price_contract(in_dates: List[date], in_prices: List[float], out_dates: List[date], out_prices: List[float],
+                   rate: float, storage_cost_rate: float, max_volume: float, injection_withdrawal_cost_rate: float) -> float:
     """Calculate the value of the gas storage contract."""
-    # Map dates to prices for faster lookups
-    injection_schedule = dict(zip(in_dates, in_prices))
-    withdrawal_schedule = dict(zip(out_dates, out_prices))
-    
+    validate_inputs(in_dates, in_prices)
+    validate_inputs(out_dates, out_prices)
+
     # Combine and sort all dates
-    all_dates = sorted(set(in_dates + out_dates))
-    
+    schedule = {date: {"type": "inject", "price": price} for date, price in zip(in_dates, in_prices)}
+    schedule.update({date: {"type": "withdraw", "price": price} for date, price in zip(out_dates, out_prices)})
+    all_dates = sorted(schedule.keys())
+
     # Initialize variables
     volume = 0
     total_cost = 0
     total_revenue = 0
-    
+
     # Process each date
     for current_date in all_dates:
-        if current_date in injection_schedule:
-            # Inject gas
-            price = injection_schedule[current_date]
-            volume, cost = inject_gas(volume, rate, max_volume, price, injection_withdrawal_cost_rate)
+        event = schedule[current_date]
+        if event["type"] == "inject":
+            volume, cost = inject_gas(volume, rate, max_volume, event["price"], injection_withdrawal_cost_rate)
             total_cost += cost
-            if cost > 0:
-                print(f"Injected gas on {current_date} at a price of {price}")
-        elif current_date in withdrawal_schedule:
-            # Withdraw gas
-            price = withdrawal_schedule[current_date]
-            volume, revenue = withdraw_gas(volume, rate, price, injection_withdrawal_cost_rate)
+        elif event["type"] == "withdraw":
+            volume, revenue = withdraw_gas(volume, rate, event["price"], injection_withdrawal_cost_rate)
             total_revenue += revenue
-            if revenue > 0:
-                print(f"Extracted gas on {current_date} at a price of {price}")
-    
+
     # Calculate storage cost
     storage_cost = calculate_storage_cost(min(in_dates), max(out_dates), storage_cost_rate)
-    
+
     # Calculate final contract value
     contract_value = total_revenue - total_cost - storage_cost
     return contract_value
-
-# Example usage
-in_dates = [date(2022, 1, 1), date(2022, 2, 1), date(2022, 2, 21), date(2022, 4, 1)]
-in_prices = [20, 21, 20.5, 22]
-out_dates = [date(2022, 1, 27), date(2022, 2, 15), date(2022, 3, 20), date(2022, 6, 1)]
-out_prices = [23, 19, 21, 25]
-rate = 100000
-storage_cost_rate = 10000
-max_storage_volume = 500000
-injection_withdrawal_cost_rate = 0.0005
-
-result = price_contract(in_dates, in_prices, out_dates, out_prices, rate, storage_cost_rate, max_storage_volume, injection_withdrawal_cost_rate)
-print()
-print(f"The value of the contract is: ${result}")
